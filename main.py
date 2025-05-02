@@ -9,7 +9,7 @@ import os
 load_dotenv()
 
 # FastAPI app
-app = FastAPI(title="Job Listings API", description="API serving job listings scraped from Jora", version="1.0")
+app = FastAPI(title="Job40nline API", description="API serving job listings scraped from Jora", version="1.0")
 
 # MongoDB Connection
 mongo_uri = os.getenv("MONGO_URI")

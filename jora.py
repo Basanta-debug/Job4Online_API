@@ -292,7 +292,7 @@ class JoraScraper:
 if __name__ == "__main__":
     scraper = JoraScraper()
     search_keywords = ["Accountant"]
-    locations = ["Australia","Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide"]
+    locations = ["Sydney"]
     start_time = time.time()
     for keyword in search_keywords:
         for location in locations:
