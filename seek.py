@@ -1,13 +1,17 @@
-import requests
+# import requests
+from curl_cffi import requests
 from bs4 import BeautifulSoup
 import time
 from pymongo import MongoClient
 import os
 from dotenv import load_dotenv
 import sys
-
+import re
 # Load environment variables
 load_dotenv()
+
+sess = requests.Session()
+sess.impersonate = 'chrome'
 
 headers = {
     "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
@@ -19,8 +23,13 @@ headers = {
     'Upgrade-Insecure-Requests': '1'
 }
 
+def clean_text(text):
+    if not isinstance(text, str):
+        return text
+    # Remove invalid surrogate characters
+    return re.sub(r'[\ud800-\udfff]', '', text)
 
-# **🔹 MongoDB Setup**
+# 🔹 MongoDB Setup
 def get_db():
     """Connect to MongoDB and return the database."""
     try:
@@ -54,7 +63,7 @@ def get_job_description(job_url):
         return "No job URL provided"
 
     headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"}
-    response = requests.get(job_url, headers=headers)
+    response = sess.get(job_url)
     
     if response.status_code != 200:
         print(f"⚠️ Failed to fetch job description: {job_url}")
@@ -73,13 +82,13 @@ def get_job_description(job_url):
 def get_job_listings(search_keyword):
     """Scrape job listings from Seek and return as a list."""
     base_url = f"https://www.seek.com.au/{search_keyword.replace(' ', '-')}-jobs"
-    headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+        # "Cookie": "sol_id=cb1758f8-471c-44f2-ab1b-fbab7cf1efac; JobseekerSessionId=06b7f458-1310-4510-9aa3-3eb70789742d; JobseekerVisitorId=06b7f458-1310-4510-9aa3-3eb70789742d; __cf_bm=NXp3JMmc9luMKSxaudYIKOnLNkp2jpl6zkWTxmE3Ok4-1743872296-1.0.1.1-FrnIke8k1qRHLc6ZkQfgrxq6Ziwq0Ktgn7whqPF1MRnA_Ha1p3KAVHdeyo4xE7cSMdSBOmL5d_Kc3lgmkN91Wub_CL3sX0UoDIgmnpG7Yng; _cfuvid=YIbFnRQ3e.nxBTDYf3tTKiv_nAa6zKGrH_HGophySUQ-1743872296129-0.0.1.1-604800000; main=V%7C2~P%7Cjobsearch~K%7CHospitality~WID%7C3000~OSF%7Cquick&set=1743872414703; da_cdt=visid_019606e555e9000dc9f64ebf7b5f0506f00280670093c-sesid_1743872415210-hbvid_cb1758f8_471c_44f2_ab1b_fbab7cf1efac-tempAcqSessionId_1743872414689-tempAcqVisitorId_cb1758f8471c44f2ab1bfbab7cf1efac; da_anz_candi_sid=1743872415210; da_searchTerm=undefined; utag_main=v_id:019606e555e9000dc9f64ebf7b5f0506f00280670093c$_sn:1$_se:1%3Bexp-session$_ss:1%3Bexp-session$_st:1743874215210%3Bexp-session$ses_id:1743872415210%3Bexp-session$_pn:1%3Bexp-session$_prevpage:search%20results%3Bexp-1743876015400; hubble_temp_acq_session=id%3A1743872414689_end%3A1743874215404_sent%3A3; _dd_s=rum=2&id=256a9442-f146-4cb4-8050-eac15c0f5fda&created=1743872414677&expire=1743873314682&logs=0"
+    }
     
+    response = sess.get(base_url)
 
-    response = requests.get(base_url, headers=headers)
-    with open("seek_au_com_privacy.html", "w", encoding="utf-8") as file:
-        file.write(response.text)
-        
     if response.status_code != 200:
         print(f"⚠️ Failed to fetch {base_url} got status code {response.status_code}")
         return []
@@ -90,13 +99,13 @@ def get_job_listings(search_keyword):
     print(f"✅ Total jobs found: {total_jobs} for '{search_keyword}'")
 
     jobs = []
-    total_pages = min((total_jobs // 22) + 1, 5)  # Limit to first 5 pages
+    total_pages = min((total_jobs // 22) + 1, 9)  # Limit to first 5 pages
     existing_job_ids = get_existing_job_ids()
 
     for page in range(1, total_pages + 1):
         print(f"🔄 Scraping page {page} of {total_pages} for '{search_keyword}'")
         page_url = f"{base_url}?page={page}" if page > 1 else base_url
-        response = requests.get(page_url, headers=headers)
+        response = sess.get(page_url)
         
         if response.status_code != 200:
             print(f"⚠️ Failed to fetch {page_url}")
@@ -104,7 +113,6 @@ def get_job_listings(search_keyword):
         
         soup = BeautifulSoup(response.text, 'html.parser')
         job_elements = soup.find_all('article')
-
         for job in job_elements:
             id = job.get('data-job-id', "").strip()  # Ensure it's a string
             if not id or id in existing_job_ids:  # Skip duplicates
@@ -127,15 +135,15 @@ def get_job_listings(search_keyword):
 
             job_data = {
                 "id": id,
-                "search_keyword": search_keyword,
-                "title": title,
-                "jobLocation": jobLocation.text.strip() if jobLocation else "",
-                "employer": employer.text.strip() if employer else "",
-                "work_type": work_type,
-                "salary": salary.text.strip() if salary else "",
-                "date_posted": date_posted.text.strip() if date_posted else "",
-                "job_description": job_description,
-                "job_url": job_url if job_url else "No URL"
+                "search_keyword": clean_text(search_keyword),
+                "title": clean_text(title),
+                "jobLocation": clean_text(jobLocation.text.strip() if jobLocation else ""),
+                "employer": clean_text(employer.text.strip() if employer else ""),
+                "work_type": clean_text(work_type),
+                "salary": clean_text(salary.text.strip() if salary else ""),
+                "date_posted": clean_text(date_posted.text.strip() if date_posted else ""),
+                "job_description": clean_text(job_description),
+                "job_url": clean_text(job_url if job_url else "No URL")
             }
             jobs.append(job_data)
             
@@ -168,12 +176,18 @@ def upload_to_mongodb(jobs):
     except Exception as e:
         print("❌ Error uploading data to MongoDB:", e)
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     search_keywords = [
         "Hospitality",
+        "Kitchen Hand",
+        "Bartender",
+        "Bar Manager",
+        "Barista",
+        "Waiter",
+        "Chef",
         "Customer Service",
- 
-
+        "Data Analyst",
+        "Network Engineer",
     ]
     
     all_jobs = []

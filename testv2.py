@@ -5,26 +5,83 @@ from pymongo import MongoClient
 import os
 from dotenv import load_dotenv
 import sys
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 
 # Load environment variables
 load_dotenv()
 
-headers = {
-    "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'en-US,en;q=0.5',
-    'Referer': 'https://www.google.com/',
-    'DNT': '1',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1'
-}
+class SessionManager:
+    def __init__(self):
+        self.session = requests.Session()
+        self.headers = {
+            "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Referer': 'https://www.google.com/',
+            'DNT': '1',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1'
+        }
+        
+        # Configure retry strategy
+        retry_strategy = Retry(
+            total=3,
+            backoff_factor=1,
+            status_forcelist=[429, 500, 502, 503, 504]
+        )
+        adapter = HTTPAdapter(max_retries=retry_strategy)
+        self.session.mount("https://", adapter)
+        self.session.mount("http://", adapter)
+        
+        self.initialize_session()
 
+    def initialize_session(self):
+        """Initialize session by visiting the base URL to establish cookies"""
+        base_url = "https://www.seek.com.au"
+        try:
+            print(f"Initializing session with {base_url}")
+            response = self.session.get(
+                base_url,
+                headers=self.headers,
+                timeout=10
+            )
+            response.raise_for_status()
+            
+            # Update session headers with any cookies received
+            if response.cookies:
+                self.session.cookies.update(response.cookies)
+                print("Cookies set successfully")
+            
+            print("Session initialized successfully")
+            return True
+            
+        except requests.exceptions.RequestException as e:
+            print(f"Failed to initialize session: {e}")
+            return False
+
+    def get(self, url, **kwargs):
+        """Wrapper for session.get with proper headers and error handling"""
+        try:
+            response = self.session.get(
+                url,
+                headers=self.headers,
+                timeout=10,
+                **kwargs
+            )
+            response.raise_for_status()
+            return response
+        except requests.exceptions.RequestException as e:
+            print(f"Request failed for {url}: {e}")
+            return None
+
+# Initialize session manager globally
+session_manager = SessionManager()
 
 # **🔹 MongoDB Setup**
 def get_db():
     """Connect to MongoDB and return the database."""
     try:
-       
         client = MongoClient(os.getenv("MONGO_URI"), serverSelectionTimeoutMS=5000)
         client.server_info()  # Test the connection
         db = client.joblistings  # Replace with your database name
@@ -51,18 +108,22 @@ def get_existing_job_ids():
 def get_job_description(job_url):
     """Fetch job description from the job listing page."""
     if not job_url:
-        return "No job URL provided"
+        return {
+            "job_detail": "No job URL provided",
+            "work_type": "No work type available"
+        }
 
-    headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"}
-    response = requests.get(job_url, headers=headers)
+    response = session_manager.get(job_url)
     
-    if response.status_code != 200:
+    if not response or response.status_code != 200:
         print(f"⚠️ Failed to fetch job description: {job_url}")
-        return "Failed to retrieve description"
+        return {
+            "job_detail": "Failed to retrieve description",
+            "work_type": "No work type available"
+        }
     
     soup = BeautifulSoup(response.text, 'html.parser')
     job_detail = soup.select_one('[data-automation="jobAdDetails"]')
-
     work_type = soup.select_one('[data-automation="job-detail-work-type"]')
 
     return {
@@ -73,15 +134,10 @@ def get_job_description(job_url):
 def get_job_listings(search_keyword):
     """Scrape job listings from Seek and return as a list."""
     base_url = f"https://www.seek.com.au/{search_keyword.replace(' ', '-')}-jobs"
-    headers = {"User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1"}
     
-
-    response = requests.get(base_url, headers=headers)
-    with open("seek_au_com_privacy.html", "w", encoding="utf-8") as file:
-        file.write(response.text)
-        
-    if response.status_code != 200:
-        print(f"⚠️ Failed to fetch {base_url} got status code {response.status_code}")
+    response = session_manager.get(base_url)
+    if not response or response.status_code != 200:
+        print(f"⚠️ Failed to fetch {base_url}")
         return []
     
     soup = BeautifulSoup(response.text, 'html.parser')
@@ -96,9 +152,9 @@ def get_job_listings(search_keyword):
     for page in range(1, total_pages + 1):
         print(f"🔄 Scraping page {page} of {total_pages} for '{search_keyword}'")
         page_url = f"{base_url}?page={page}" if page > 1 else base_url
-        response = requests.get(page_url, headers=headers)
+        response = session_manager.get(page_url)
         
-        if response.status_code != 200:
+        if not response or response.status_code != 200:
             print(f"⚠️ Failed to fetch {page_url}")
             continue
         
@@ -106,24 +162,22 @@ def get_job_listings(search_keyword):
         job_elements = soup.find_all('article')
 
         for job in job_elements:
-            id = job.get('data-job-id', "").strip()  # Ensure it's a string
-            if not id or id in existing_job_ids:  # Skip duplicates
+            id = job.get('data-job-id', "").strip()
+            if not id or id in existing_job_ids:
                 continue
-            
             
             title = job.get('aria-label', "").strip()
             jobLocation = job.select_one('[data-automation="jobLocation"]')
             employer = job.select_one('a[data-automation="jobCompany"]')
-            
             salary = job.select_one('[data-automation="jobSalary"]')
             date_posted = job.select_one('[data-automation="jobListingDate"]')
             job_link = job.select_one('a[data-automation="jobTitle"]')
             
             job_url = f"https://www.seek.com.au{job_link['href']}" if job_link else None
-            job_detail = get_job_description(job_url) if job_url else "No job URL"
-            
-            job_description =  job_detail["job_detail"] 
-            work_type = job_detail["work_type"] 
+            job_detail = get_job_description(job_url) if job_url else {
+                "job_detail": "No job URL",
+                "work_type": "No work type available"
+            }
 
             job_data = {
                 "id": id,
@@ -131,10 +185,10 @@ def get_job_listings(search_keyword):
                 "title": title,
                 "jobLocation": jobLocation.text.strip() if jobLocation else "",
                 "employer": employer.text.strip() if employer else "",
-                "work_type": work_type,
+                "work_type": job_detail["work_type"],
                 "salary": salary.text.strip() if salary else "",
                 "date_posted": date_posted.text.strip() if date_posted else "",
-                "job_description": job_description,
+                "job_description": job_detail["job_detail"],
                 "job_url": job_url if job_url else "No URL"
             }
             jobs.append(job_data)
@@ -154,13 +208,13 @@ def upload_to_mongodb(jobs):
         if db is None:
             return
         
-        collection = db.jobs  # Replace with your collection name
+        collection = db.jobs
         existing_job_ids = get_existing_job_ids()
-        new_data = [job for job in jobs if job["id"] not in existing_job_ids]  # Avoid duplicates
+        new_data = [job for job in jobs if job["id"] not in existing_job_ids]
 
         if new_data:
             print(f"✅ Uploading {len(new_data)} new job listings to MongoDB...")
-            collection.insert_many(new_data)  # Insert new documents
+            collection.insert_many(new_data)
             print(f"✅ Successfully uploaded {len(new_data)} new job listings.")
         else:
             print("⚠️ No new jobs to update.")
@@ -172,8 +226,6 @@ if __name__ == "__main__":
     search_keywords = [
         "Hospitality",
         "Customer Service",
- 
-
     ]
     
     all_jobs = []
@@ -183,7 +235,7 @@ if __name__ == "__main__":
         all_jobs.extend(job_listings)
         time.sleep(2)  # Prevent excessive requests
     
-    # ✅ Upload to MongoDB
+    # Upload to MongoDB
     upload_to_mongodb(all_jobs)
     
     print("🎉 Job listings scraping and uploading completed!")
