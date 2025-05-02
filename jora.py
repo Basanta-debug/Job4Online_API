@@ -21,8 +21,8 @@ class JoraScraper:
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
         self.total_jobs_scraped = 0
         self.mongo_uri = "mongodb+srv://basanta:Psn3yao4AsSofOKI@cluster1.0cq62.mongodb.net/?retryWrites=true&w=majority&appName=Cluster1"
-        self.db_name = "job_scraper"
-        self.collection_name = "jorajobs"
+        self.db_name = "joblistings"
+        self.collection_name = "jobs"
         self.client = MongoClient(self.mongo_uri)
         self.db = self.client[self.db_name]
         self.collection = self.db[self.collection_name]
