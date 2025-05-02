@@ -178,16 +178,7 @@ def upload_to_mongodb(jobs):
 
 if __name__ == '__main__':
     search_keywords = [
-        "Hospitality",
-        "Kitchen Hand",
-        "Bartender",
-        "Bar Manager",
-        "Barista",
-        "Waiter",
-        "Chef",
-        "Customer Service",
-        "Data Analyst",
-        "Network Engineer",
+        "Accountant",
     ]
     
     all_jobs = []
