@@ -2,13 +2,12 @@ from fastapi import FastAPI, HTTPException, Depends
 from pymongo import MongoClient
 import os
 from dotenv import load_dotenv
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel
 
 # Load environment variables
 load_dotenv()
 
-# Debug prints
 print("Loading environment variables...")
 print("MONGO_URI:", os.getenv("MONGO_URI"))
 print("API_KEY:", os.getenv("API_KEY"))
@@ -37,9 +36,15 @@ class JobListing(BaseModel):
     employer: str
     work_type: str
     salary: str
+    min_salary: Optional[float]
+    max_salary: Optional[float]
+    payable_duration: Optional[str]
     date_posted: str
-    job_description: str
+    job_summary: str
+    job_description_html: str
     job_url: str
+    apply_url: str
+    source: str
 
 def verify_api_key(api_key: str):
     if api_key != API_KEY:
@@ -55,7 +60,6 @@ async def get_jobs(api_key: str = Depends(verify_api_key)):
     jobs = list(collection.find({}, {"_id": 0}))
     return jobs
 
-# Run the app if executing directly
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

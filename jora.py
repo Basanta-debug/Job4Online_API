@@ -21,11 +21,12 @@ class JoraScraper:
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
         self.total_jobs_scraped = 0
         self.mongo_uri = "mongodb+srv://basanta:Psn3yao4AsSofOKI@cluster1.0cq62.mongodb.net/?retryWrites=true&w=majority&appName=Cluster1"
-        self.db_name = "job_scraper"
-        self.collection_name = "jorajobs"
+        self.db_name = "joblistings"    # changed here
+        self.collection_name = "jobs"   # changed here
         self.client = MongoClient(self.mongo_uri)
         self.db = self.client[self.db_name]
         self.collection = self.db[self.collection_name]
+
 
     def get_random_headers(self):
         return {
@@ -292,7 +293,7 @@ class JoraScraper:
 if __name__ == "__main__":
     scraper = JoraScraper()
     search_keywords = ["Accountant"]
-    locations = ["Australia","Sydney", "Melbourne", "Brisbane", "Perth", "Adelaide"]
+    locations = ["Sydney"]
     start_time = time.time()
     for keyword in search_keywords:
         for location in locations:
