@@ -63,8 +63,25 @@ async def root():
 @app.get("/jobs", response_model=List[JobListing], tags=["Job Listings"])
 async def get_jobs(api_key: str = Depends(verify_api_key)):
     try:
-        jobs = list(collection.find({}, {"_id": 0}))
-        return jobs
+        # Ensure every document has all expected fields (fill missing ones with None)
+        expected_fields = [
+            "id", "search_keyword", "title", "jobLocation", "employer",
+            "work_type", "salary", "min_salary", "max_salary", "payable_duration",
+            "date_posted", "job_summary", "job_description_html", "job_url",
+            "apply_url", "source"
+        ]
+
+        jobs_raw = list(collection.find({}, {"_id": 0}))
+        jobs_clean = []
+
+        for job in jobs_raw:
+            for field in expected_fields:
+                if field not in job:
+                    job[field] = None
+            jobs_clean.append(job)
+
+        return jobs_clean
+
     except Exception as e:
         print("❌ Error fetching jobs from MongoDB:", e)
         raise HTTPException(status_code=500, detail="Failed to fetch job listings.")
