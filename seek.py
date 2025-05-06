@@ -99,7 +99,7 @@ def get_job_listings(search_keyword):
     print(f"✅ Total jobs found: {total_jobs} for '{search_keyword}'")
 
     jobs = []
-    total_pages = min((total_jobs // 22) + 1, 9)  # Limit to first 5 pages
+    total_pages = min((total_jobs // 22) + 1, 2)  # Limit to first 5 pages
     existing_job_ids = get_existing_job_ids()
 
     for page in range(1, total_pages + 1):
