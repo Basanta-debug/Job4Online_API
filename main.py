@@ -1,32 +1,42 @@
 from fastapi import FastAPI, HTTPException, Depends
 from pymongo import MongoClient
+from pymongo.errors import PyMongoError
 import os
 from dotenv import load_dotenv
 from typing import List, Optional
 from pydantic import BaseModel
+import logging
+
+# Setup logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Load environment variables
 load_dotenv()
+MONGO_URI = os.getenv("MONGO_URI")
+API_KEY = os.getenv("API_KEY")
 
-print("Loading environment variables...")
-print("MONGO_URI:", os.getenv("MONGO_URI"))
-print("API_KEY:", os.getenv("API_KEY"))
+logger.info("Loading environment variables...")
+logger.info(f"MONGO_URI: {MONGO_URI}")
+logger.info(f"API_KEY: {API_KEY}")
 
 # MongoDB Connection
 try:
-    client = MongoClient(os.getenv("MONGO_URI"), serverSelectionTimeoutMS=3000)
+    client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=3000)
     client.admin.command("ping")
-    print("MongoDB connection successful.")
-    db = client.joblistings
-    collection = db.jobs
+    logger.info("MongoDB connection successful.")
+    db = client["joblistings"]
+    collection = db["jobs"]
 except Exception as e:
-    print("MongoDB connection failed:", e)
+    logger.error("MongoDB connection failed: %s", e)
     raise e
 
 # FastAPI app
-app = FastAPI(title="Job Listings API", description="API with API Key Authentication", version="1.0")
-
-API_KEY = os.getenv("API_KEY")
+app = FastAPI(
+    title="Job Listings API",
+    description="API with API Key Authentication",
+    version="1.0"
+)
 
 class JobListing(BaseModel):
     id: str
@@ -57,8 +67,16 @@ async def root():
 
 @app.get("/jobs", response_model=List[JobListing], tags=["Job Listings"])
 async def get_jobs(api_key: str = Depends(verify_api_key)):
-    jobs = list(collection.find({}, {"_id": 0}))
-    return jobs
+    try:
+        jobs = list(collection.find({}, {"_id": 0}))
+        logger.info(f"Retrieved {len(jobs)} job(s) from MongoDB.")
+        return jobs
+    except PyMongoError as e:
+        logger.error("Database query error: %s", e)
+        raise HTTPException(status_code=500, detail="Database query failed.")
+    except Exception as e:
+        logger.error("Unexpected error: %s", e)
+        raise HTTPException(status_code=500, detail="Internal server error.")
 
 if __name__ == "__main__":
     import uvicorn
