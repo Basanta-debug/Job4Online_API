@@ -33,18 +33,18 @@ class JobListing(BaseModel):
     search_keyword: str
     title: str
     jobLocation: str
-    employer: str
-    work_type: str
-    salary: str
-    min_salary: Optional[float]
-    max_salary: Optional[float]
+    employer: Optional[str]
+    work_type: Optional[str]
+    salary: Optional[str]
+    min_salary: Optional[Any]
+    max_salary: Optional[Any]
     payable_duration: Optional[str]
-    date_posted: str
-    job_summary: str
-    job_description_html: str
-    job_url: str
-    apply_url: str
-    source: str
+    date_posted: Optional[str]
+    job_summary: Optional[str]
+    job_description_html: Optional[str]
+    job_url: Optional[str]
+    apply_url: Optional[str]
+    source: Optional[str]
 
 def verify_api_key(api_key: str):
     if api_key != API_KEY:
