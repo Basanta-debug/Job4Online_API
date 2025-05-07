@@ -2,7 +2,7 @@ from fastapi import FastAPI, HTTPException, Depends
 from pymongo import MongoClient
 import os
 from dotenv import load_dotenv
-from typing import List, Optional
+from typing import List, Optional, Any
 from pydantic import BaseModel
 
 # Load environment variables
@@ -41,8 +41,8 @@ class JobListing(BaseModel):
     employer: Optional[str]
     work_type: Optional[str]
     salary: Optional[str]
-    min_salary: Optional[str]
-    max_salary: Optional[str]
+    min_salary: Optional[Any]
+    max_salary: Optional[Any]
     payable_duration: Optional[str]
     date_posted: Optional[str]
     job_summary: Optional[str]
