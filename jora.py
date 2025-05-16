@@ -8,6 +8,18 @@ import re
 import concurrent.futures
 import json
 from pymongo import MongoClient
+from enum import Enum
+
+class WorkType(str, Enum):
+    FULL_TIME = "FULL_TIME"
+    PART_TIME = "PART_TIME"
+    CONTRACT = "CONTRACT"
+    CASUAL = "CASUAL"
+    INTERNSHIP = "INTERNSHIP"
+    FREELANCE = "FREELANCE"
+    OTHER = "OTHER"  # Added for cases that don't match any enum
+
+VALID_WORK_TYPES = {wt.value for wt in WorkType}
 
 class JoraScraper:
     def __init__(self):
@@ -21,12 +33,39 @@ class JoraScraper:
         self.executor = concurrent.futures.ThreadPoolExecutor(max_workers=5)
         self.total_jobs_scraped = 0
         self.mongo_uri = "mongodb+srv://basanta:Psn3yao4AsSofOKI@cluster1.0cq62.mongodb.net/?retryWrites=true&w=majority&appName=Cluster1"
-        self.db_name = "joblistings"    # changed here
-        self.collection_name = "jobs"   # changed here
+        self.db_name = "joblistings"
+        self.collection_name = "jobs"
         self.client = MongoClient(self.mongo_uri)
         self.db = self.client[self.db_name]
         self.collection = self.db[self.collection_name]
 
+    def normalize_work_type(self, work_type):
+        if not work_type:
+            return None
+            
+        # Normalize the input string
+        normalized = work_type.upper().strip().replace(" ", "_")
+        
+        # Try to match with enum values
+        for wt in WorkType:
+            if wt.value in normalized or normalized in wt.value:
+                return wt.value
+        
+        # Check common variations
+        if "FULL" in normalized or "PERMANENT" in normalized:
+            return WorkType.FULL_TIME.value
+        elif "PART" in normalized:
+            return WorkType.PART_TIME.value
+        elif "CONTRACT" in normalized or "FIXED_TERM" in normalized:
+            return WorkType.CONTRACT.value
+        elif "CASUAL" in normalized:
+            return WorkType.CASUAL.value
+        elif "INTERN" in normalized:
+            return WorkType.INTERNSHIP.value
+        elif "FREELANCE" in normalized or "SELF_EMPLOYED" in normalized:
+            return WorkType.FREELANCE.value
+            
+        return None
 
     def get_random_headers(self):
         return {
@@ -142,7 +181,7 @@ class JoraScraper:
             self.print_status(f"Error scraping page: {str(e)}")
             return False
 
-    def scrape_jobs(self, search_keyword, location="Australia", max_pages=3):
+    def scrape_jobs(self, search_keyword, location="Australia", max_pages=5):
         encoded_keyword = quote(search_keyword)
         encoded_location = quote(location)
         base_url = f"https://au.jora.com/j?q={encoded_keyword}&l={encoded_location}"
@@ -182,6 +221,9 @@ class JoraScraper:
                 elif any(word in text.lower() for word in ["full", "part", "contract", "casual", "temporary", "permanent"]):
                     work_type = text
 
+            # Normalize and validate work_type
+            work_type = self.normalize_work_type(work_type)
+            
             min_salary, max_salary, payable_duration = self.parse_salary_text(salary)
 
             date_posted = datetime.now().strftime('%Y-%m-%d')
@@ -266,7 +308,7 @@ class JoraScraper:
         return {
             "job_detail": "No description available",
             "summary": "Summary not available",
-            "work_type": "Employment type not specified",
+            "work_type": None,
             "salary": "Salary not specified",
             "employer": "Employer not specified",
             "date_posted": datetime.now().strftime('%Y-%m-%d'),
@@ -281,8 +323,19 @@ class JoraScraper:
             self.print_status("No jobs to save")
             return
         try:
-            self.collection.insert_many(self.jobs)
-            self.print_status(f"Successfully inserted {len(self.jobs)} jobs into MongoDB collection.")
+            # Filter out jobs where any value is None or an empty string
+            valid_jobs = [
+                job for job in self.jobs
+                if all(value is not None and value != "" for value in job.values())
+                and job.get("work_type") in VALID_WORK_TYPES
+            ]
+
+            if not valid_jobs:
+                self.print_status("No valid jobs to insert (some had null or empty fields or invalid work_type)")
+                return
+
+            self.collection.insert_many(valid_jobs)
+            self.print_status(f"Successfully inserted {len(valid_jobs)} jobs into MongoDB collection.")
         except Exception as e:
             self.print_status(f"Failed to insert into MongoDB: {str(e)}")
 
@@ -292,12 +345,12 @@ class JoraScraper:
 
 if __name__ == "__main__":
     scraper = JoraScraper()
-    search_keywords = ["Accountant"]
-    locations = ["Sydney"]
+    search_keywords = ["Accountant", "Finance Manager", "Grill Chef", "Chef", "Data Analyst"]
+    locations = ["Sydney",]
     start_time = time.time()
     for keyword in search_keywords:
         for location in locations:
-            scraper.scrape_jobs(keyword, location, max_pages=3)
+            scraper.scrape_jobs(keyword, location, max_pages=5)
             time.sleep(random.uniform(1, 2))
     scraper.save_to_mongo()
     elapsed_time = time.time() - start_time
